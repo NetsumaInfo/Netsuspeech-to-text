@@ -83,7 +83,7 @@
     },
     "permissions": {
       "title": "Autorisations requises",
-      "description": "Parler a besoin de quelques autorisations pour fonctionner correctement.",
+      "description": "Netsuspeech a besoin de quelques autorisations pour fonctionner correctement.",
       "microphone": {
         "title": "Accès au microphone",
         "description": "Nécessaire pour entendre votre voix pour la transcription."
@@ -158,7 +158,7 @@
     "general": {
       "title": "Général",
       "shortcut": {
-        "title": "Raccourcis Parler",
+        "title": "Raccourcis Netsuspeech",
         "description": "Configurer les raccourcis clavier pour déclencher l'enregistrement de la reconnaissance vocale",
         "loading": "Chargement des raccourcis...",
         "none": "Aucun raccourci configuré",
@@ -181,7 +181,8 @@
         "errors": {
           "restore": "Échec de la restauration du raccourci original",
           "set": "Échec de la définition du raccourci : {{error}}",
-          "reset": "Échec de la réinitialisation du raccourci à sa valeur d'origine"
+          "reset": "Échec de la réinitialisation du raccourci à sa valeur d'origine",
+          "mainKeyRequired": "Ajoutez une touche principale, comme une lettre, un chiffre ou Espace."
         }
       },
       "language": {
@@ -193,7 +194,7 @@
         "auto": "Auto"
       },
       "pushToTalk": {
-        "label": "Appuyer pour parler",
+        "label": "Appuyer pour Netsuspeech",
         "description": "Maintenez pour enregistrer, relâchez pour arrêter"
       }
     },
@@ -239,11 +240,11 @@
       },
       "autostart": {
         "label": "Lancer au démarrage",
-        "description": "Démarrer automatiquement Parler lorsque vous vous connectez à votre ordinateur."
+        "description": "Démarrer automatiquement Netsuspeech lorsque vous vous connectez à votre ordinateur."
       },
       "showTrayIcon": {
         "label": "Afficher l'icône de la barre",
-        "description": "Afficher l'icône de Parler dans la barre système."
+        "description": "Afficher l'icône de Netsuspeech dans la barre système."
       },
       "overlay": {
         "title": "Position de la fenêtre d'enregistrement",
@@ -379,6 +380,35 @@
         "cancel": "Annuler",
         "selectToEdit": "Sélectionnez un prompt ci-dessus pour voir et modifier ses détails.",
         "createFirst": "Cliquez sur 'Créer un nouveau prompt' ci-dessus pour créer votre premier prompt de post-traitement."
+      },
+      "actions": {
+        "title": "Actions",
+        "description": "Attribuez un raccourci global personnalisable à chaque action. Vous pouvez activer une action avant l'enregistrement, et elle restera active jusqu'à ce que vous la changiez ou la désactiviez.",
+        "noActions": "Aucune action configurée pour le moment.",
+        "createFirst": "Créez votre première action pour traiter les transcriptions avec le fournisseur configuré.",
+        "addAction": "Ajouter une action",
+        "editAction": "Modifier l'action",
+        "arm": "Activer",
+        "disarm": "Désactiver",
+        "active": "Active",
+        "armedToast": "{{shortcut}} activé : {{name}}",
+        "disarmedToast": "Action désactivée",
+        "key": "Touche",
+        "keyLabel": "Touche (1-9)",
+        "name": "Nom",
+        "namePlaceholder": "ex. Mode email",
+        "prompt": "Prompt",
+        "promptPlaceholder": "ex. Formate ceci comme un email professionnel avec salutation et signature. Ajoute des sauts de ligne entre les paragraphes.",
+        "promptTip": "Astuce : Utilisez <code>${output}</code> pour insérer le texte transcrit dans votre prompt.",
+        "model": "Modèle (optionnel)",
+        "modelPlaceholder": "Sélectionner un modèle",
+        "modelTip": "Sélectionnez un modèle spécifique pour cette action, ou utilisez celui par défaut de la section API.",
+        "defaultModel": "Par défaut",
+        "shortcutAfterSave": "Enregistrez d'abord l'action, puis cliquez sur son raccourci pour enregistrer les touches voulues.",
+        "save": "Enregistrer",
+        "cancel": "Annuler",
+        "delete": "Supprimer",
+        "maxActionsReached": "Maximum de 9 actions atteint."
       }
     },
     "history": {
@@ -407,7 +437,7 @@
       },
       "updateChecks": {
         "label": "Vérifier les mises à jour",
-        "description": "Vérifier automatiquement les nouvelles versions de Parler"
+        "description": "Vérifier automatiquement les nouvelles versions de Netsuspeech"
       },
       "soundTheme": {
         "label": "Thème sonore",
@@ -471,11 +501,11 @@
       "title": "À propos",
       "version": {
         "title": "Version",
-        "description": "Version actuelle de Parler"
+        "description": "Version actuelle de Netsuspeech"
       },
       "appDataDirectory": {
         "title": "Emplacement des données de l'application",
-        "description": "Emplacement où Parler stocke ses données"
+        "description": "Emplacement où Netsuspeech stocke ses données"
       },
       "sourceCode": {
         "title": "Code source",
@@ -484,7 +514,7 @@
       },
       "supportDevelopment": {
         "title": "Soutenir le développement",
-        "description": "Aidez-nous à continuer à construire Parler",
+        "description": "Aidez-nous à continuer à construire Netsuspeech",
         "button": "Faire un don"
       },
       "acknowledgments": {
@@ -492,7 +522,7 @@
         "whisper": {
           "title": "Whisper.cpp",
           "description": "Inférence haute performance du modèle de reconnaissance vocale automatique Whisper d'OpenAI",
-          "details": "Parler utilise Whisper.cpp pour un traitement rapide et local de la parole en texte. Merci au travail incroyable de Georgi Gerganov et des contributeurs."
+          "details": "Netsuspeech utilise Whisper.cpp pour un traitement rapide et local de la parole en texte. Merci au travail incroyable de Georgi Gerganov et des contributeurs."
         }
       }
     }
@@ -535,7 +565,7 @@
   },
   "accessibility": {
     "permissionsRequired": "Autorisations d'accessibilité requises",
-    "permissionsDescription": "Parler a besoin des autorisations d'accessibilité pour taper le texte transcrit.",
+    "permissionsDescription": "Netsuspeech a besoin des autorisations d'accessibilité pour taper le texte transcrit.",
     "openSettings": "Ouvrir les Préférences Système",
     "dismiss": "Ignorer"
   },
@@ -544,10 +574,11 @@
   },
   "appLanguage": {
     "title": "Langue de l'application",
-    "description": "Changer la langue de l'interface de Parler"
+    "description": "Changer la langue de l'interface de Netsuspeech"
   },
   "overlay": {
     "transcribing": "Transcription...",
     "processing": "Traitement..."
   }
 }
+

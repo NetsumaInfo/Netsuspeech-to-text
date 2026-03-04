@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import type { ModelInfo } from "@/bindings";
@@ -23,23 +23,34 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
     downloadStats,
   } = useModelStore();
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const selectingModelRef = useRef<string | null>(null);
 
   const isDownloading = selectedModelId !== null;
 
   // Watch for the selected model to finish downloading + extracting
   useEffect(() => {
-    if (!selectedModelId) return;
+    if (!selectedModelId) {
+      selectingModelRef.current = null;
+      return;
+    }
 
     const model = models.find((m) => m.id === selectedModelId);
     const stillDownloading = selectedModelId in downloadingModels;
     const stillExtracting = selectedModelId in extractingModels;
 
     if (model?.is_downloaded && !stillDownloading && !stillExtracting) {
+      if (selectingModelRef.current === selectedModelId) {
+        return;
+      }
+
+      selectingModelRef.current = selectedModelId;
+
       // Model is ready — select it and transition
       selectModel(selectedModelId).then((success) => {
         if (success) {
           onModelSelected();
         } else {
+          selectingModelRef.current = null;
           toast.error(t("onboarding.errors.selectModel"));
           setSelectedModelId(null);
         }
@@ -55,6 +66,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
   ]);
 
   const handleDownloadModel = async (modelId: string) => {
+    selectingModelRef.current = null;
     setSelectedModelId(modelId);
 
     const success = await downloadModel(modelId);
@@ -81,7 +93,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
   return (
     <div className="h-screen w-screen flex flex-col p-6 gap-4 inset-0">
       <div className="flex flex-col items-center gap-2 shrink-0">
-        <ParlerTextLogo width={200} />
+        <ParlerTextLogo width={240} />
         <p className="text-text/70 max-w-md font-medium mx-auto">
           {t("onboarding.subtitle")}
         </p>

@@ -6,18 +6,23 @@ const ParlerTextLogo = ({
   height?: number;
   className?: string;
 }) => {
+  const brand = "NETSUSPEECH";
+  const fontSize = width ? width / 7.8 : 22;
+
   return (
     <div
       className={className}
       style={{
         fontFamily: "'Geist Pixel Circle', monospace",
-        fontSize: width ? width / 4.2 : 28,
+        fontSize,
         fontWeight: "normal",
-        letterSpacing: "2px",
+        letterSpacing: "1px",
+        lineHeight: 1.1,
+        whiteSpace: "nowrap",
         width,
       }}
     >
-      <span className="text-logo-primary">PARLER</span>
+      <span className="text-logo-primary">{brand}</span>
     </div>
   );
 };

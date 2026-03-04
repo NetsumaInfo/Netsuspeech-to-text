@@ -508,8 +508,6 @@ impl ShortcutAction for TranscribeAction {
         if recording_started {
             // Dynamically register the cancel shortcut in a separate task to avoid deadlock
             shortcut::register_cancel_shortcut(app);
-            // Register action shortcuts (digit keys 1-9) for configured actions
-            shortcut::register_action_shortcuts(app);
         }
 
         debug!(
@@ -519,9 +517,8 @@ impl ShortcutAction for TranscribeAction {
     }
 
     fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
-        // Unregister the cancel shortcut and action shortcuts when transcription stops
+        // Unregister the cancel shortcut when transcription stops
         shortcut::unregister_cancel_shortcut(app);
-        shortcut::unregister_action_shortcuts(app);
 
         let stop_time = Instant::now();
         debug!("TranscribeAction::stop called for binding: {}", binding_id);
@@ -543,14 +540,15 @@ impl ShortcutAction for TranscribeAction {
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
 
-        // Read and clear the selected action before spawning the async task
+        // Read the armed action without clearing it so the user can reuse it
+        // across multiple recordings until they change it.
         let selected_action_key =
             app.try_state::<ActiveActionState>()
                 .and_then(|s| match s.0.lock() {
-                    Ok(mut guard) => guard.take(),
+                    Ok(guard) => *guard,
                     Err(poisoned) => {
                         error!("ActiveActionState mutex poisoned, recovering");
-                        poisoned.into_inner().take()
+                        *poisoned.into_inner()
                     }
                 });
 

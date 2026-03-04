@@ -21,6 +21,7 @@ mod tray_i18n;
 mod utils;
 
 pub use cli::CliArgs;
+use anyhow::{anyhow, Context, Result};
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use tauri_specta::{collect_commands, Builder};
 
@@ -33,6 +34,8 @@ use managers::transcription::TranscriptionManager;
 use signal_hook::consts::{SIGUSR1, SIGUSR2};
 #[cfg(unix)]
 use signal_hook::iterator::Signals;
+use std::fs;
+use std::path::Path;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use tauri::image::Image;
@@ -48,6 +51,8 @@ use crate::settings::get_settings;
 // Global atomic to store the file log level filter
 // We use u8 to store the log::LevelFilter as a number
 pub static FILE_LOG_LEVEL: AtomicU8 = AtomicU8::new(log::LevelFilter::Debug as u8);
+const LEGACY_APP_IDENTIFIER: &str = "com.melvynx.parler";
+const LEGACY_MIGRATION_MARKER: &str = ".migrated-from-parler";
 
 fn level_filter_from_u8(value: u8) -> log::LevelFilter {
     match value {
@@ -81,6 +86,193 @@ fn build_console_filter() -> env_filter::Filter {
     }
 
     builder.build()
+}
+
+fn directory_has_complete_models(models_dir: &Path) -> Result<bool> {
+    if !models_dir.exists() {
+        return Ok(false);
+    }
+
+    for entry in fs::read_dir(models_dir)? {
+        let entry = entry?;
+        let file_name = entry.file_name();
+        let file_name = file_name.to_string_lossy();
+        if !file_name.ends_with(".partial") {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn remove_path_if_exists(path: &Path) -> Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    if path.is_dir() {
+        fs::remove_dir_all(path)?;
+    } else {
+        fs::remove_file(path)?;
+    }
+
+    Ok(())
+}
+
+fn move_path(source: &Path, destination: &Path) -> Result<()> {
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    fs::rename(source, destination).with_context(|| {
+        format!(
+            "Failed to move '{}' to '{}'",
+            source.display(),
+            destination.display()
+        )
+    })?;
+
+    Ok(())
+}
+
+fn maybe_replace_file(source: &Path, destination: &Path, should_replace: bool) -> Result<bool> {
+    if !source.exists() || !should_replace {
+        return Ok(false);
+    }
+
+    remove_path_if_exists(destination)?;
+    move_path(source, destination)?;
+    Ok(true)
+}
+
+fn migrate_model_directory(source_dir: &Path, destination_dir: &Path) -> Result<bool> {
+    if !source_dir.exists() {
+        return Ok(false);
+    }
+
+    fs::create_dir_all(destination_dir)?;
+    let mut migrated_any = false;
+
+    for entry in fs::read_dir(source_dir)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let file_name = entry.file_name();
+        let file_name_str = file_name.to_string_lossy();
+        let destination_path = destination_dir.join(&file_name);
+
+        // If we have a completed model in the legacy folder and only a partial download
+        // in the new folder, prefer the completed model.
+        if !file_name_str.ends_with(".partial") {
+            let partial_destination =
+                destination_dir.join(format!("{}.partial", file_name_str.as_ref()));
+            if partial_destination.exists() {
+                remove_path_if_exists(&partial_destination)?;
+            }
+        }
+
+        if destination_path.exists() {
+            continue;
+        }
+
+        move_path(&source_path, &destination_path)?;
+        migrated_any = true;
+    }
+
+    Ok(migrated_any)
+}
+
+fn migrate_directory_contents(source_dir: &Path, destination_dir: &Path) -> Result<bool> {
+    if !source_dir.exists() {
+        return Ok(false);
+    }
+
+    fs::create_dir_all(destination_dir)?;
+    let mut migrated_any = false;
+
+    for entry in fs::read_dir(source_dir)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let destination_path = destination_dir.join(entry.file_name());
+
+        if destination_path.exists() {
+            continue;
+        }
+
+        move_path(&source_path, &destination_path)?;
+        migrated_any = true;
+    }
+
+    Ok(migrated_any)
+}
+
+fn migrate_legacy_app_data(app_handle: &AppHandle) {
+    if let Err(error) = try_migrate_legacy_app_data(app_handle) {
+        log::warn!("Failed to migrate legacy Parler data: {}", error);
+    }
+}
+
+fn try_migrate_legacy_app_data(app_handle: &AppHandle) -> Result<()> {
+    let new_app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .context("Failed to resolve Netsuspeech app data directory")?;
+    let migration_marker = new_app_data_dir.join(LEGACY_MIGRATION_MARKER);
+
+    if migration_marker.exists() {
+        return Ok(());
+    }
+
+    let parent_dir = new_app_data_dir
+        .parent()
+        .ok_or_else(|| anyhow!("App data directory has no parent"))?;
+    let legacy_app_data_dir = parent_dir.join(LEGACY_APP_IDENTIFIER);
+
+    if !legacy_app_data_dir.exists() {
+        return Ok(());
+    }
+
+    fs::create_dir_all(&new_app_data_dir)?;
+
+    let new_models_dir = new_app_data_dir.join("models");
+    let legacy_models_dir = legacy_app_data_dir.join("models");
+    let new_has_complete_models = directory_has_complete_models(&new_models_dir)?;
+
+    // If the new profile looks fresh, replace the default-generated settings/history
+    // with the legacy ones before the managers start reading them.
+    let replaced_settings = maybe_replace_file(
+        &legacy_app_data_dir.join(settings::SETTINGS_STORE_PATH),
+        &new_app_data_dir.join(settings::SETTINGS_STORE_PATH),
+        !new_has_complete_models,
+    )?;
+    let replaced_history = maybe_replace_file(
+        &legacy_app_data_dir.join("history.db"),
+        &new_app_data_dir.join("history.db"),
+        !new_has_complete_models,
+    )?;
+
+    let migrated_models = migrate_model_directory(&legacy_models_dir, &new_models_dir)?;
+    let migrated_recordings = migrate_directory_contents(
+        &legacy_app_data_dir.join("recordings"),
+        &new_app_data_dir.join("recordings"),
+    )?;
+
+    if replaced_settings || replaced_history || migrated_models || migrated_recordings {
+        log::info!(
+            "Migrated legacy Parler data from '{}' to '{}'",
+            legacy_app_data_dir.display(),
+            new_app_data_dir.display()
+        );
+    }
+
+    fs::write(
+        &migration_marker,
+        format!(
+            "Migrated from '{}' on first Netsuspeech launch.",
+            legacy_app_data_dir.display()
+        ),
+    )?;
+
+    Ok(())
 }
 
 fn show_main_window(app: &AppHandle) {
@@ -292,6 +484,8 @@ pub fn run(cli_args: CliArgs) {
         shortcut::add_post_process_action,
         shortcut::update_post_process_action,
         shortcut::delete_post_process_action,
+        shortcut::get_active_post_process_action,
+        shortcut::set_active_post_process_action,
         shortcut::add_saved_processing_model,
         shortcut::delete_saved_processing_model,
         shortcut::update_custom_words,
@@ -385,7 +579,7 @@ pub fn run(cli_args: CliArgs) {
                     }),
                     // File logs respect the user's settings (stored in FILE_LOG_LEVEL atomic)
                     Target::new(TargetKind::LogDir {
-                        file_name: Some("parler".into()),
+                        file_name: Some("netsuspeech".into()),
                     })
                     .filter(|metadata| {
                         let file_level = FILE_LOG_LEVEL.load(Ordering::Relaxed);
@@ -427,6 +621,8 @@ pub fn run(cli_args: CliArgs) {
         ))
         .manage(cli_args.clone())
         .setup(move |app| {
+            migrate_legacy_app_data(&app.handle());
+
             let mut settings = get_settings(&app.handle());
 
             // CLI --debug flag overrides debug_mode and log level (runtime-only, not persisted)

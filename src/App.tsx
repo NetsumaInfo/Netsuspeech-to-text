@@ -1,8 +1,10 @@
 import { useEffect, useState, useRef } from "react";
 import { Toaster } from "sonner";
+import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { platform } from "@tauri-apps/plugin-os";
 import { getIdentifier } from "@tauri-apps/api/app";
+import { listen } from "@tauri-apps/api/event";
 import {
   checkAccessibilityPermission,
   checkMicrophonePermission,
@@ -13,8 +15,10 @@ import Footer from "./components/footer";
 import Onboarding, { AccessibilityOnboarding } from "./components/onboarding";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
 import { useSettings } from "./hooks/useSettings";
+import { useOsType } from "./hooks/useOsType";
 import { useSettingsStore } from "./stores/settingsStore";
 import { commands } from "@/bindings";
+import { formatKeyCombination } from "./lib/utils/keyboard";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 
 type OnboardingStep = "accessibility" | "model" | "done";
@@ -26,7 +30,7 @@ const renderSettingsContent = (section: SidebarSection) => {
 };
 
 function App() {
-  const { i18n } = useTranslation();
+  const { i18n, t } = useTranslation();
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(
     null,
   );
@@ -36,6 +40,7 @@ function App() {
   const [currentSection, setCurrentSection] =
     useState<SidebarSection>("general");
   const { settings, updateSetting } = useSettings();
+  const osType = useOsType();
   const direction = getLanguageDirection(i18n.language);
   const refreshAudioDevices = useSettingsStore(
     (state) => state.refreshAudioDevices,
@@ -93,6 +98,47 @@ function App() {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [settings?.debug_mode, updateSetting]);
+
+  useEffect(() => {
+    let cleanup: (() => void) | undefined;
+
+    const setup = async () => {
+      const unlistenSelected = await listen<{ key: number; name: string }>(
+        "action-selected",
+        (event) => {
+          const binding =
+            settings?.bindings?.[`action_${event.payload.key}`]?.current_binding;
+          const shortcut = binding
+            ? formatKeyCombination(binding, osType)
+            : `Action ${event.payload.key}`;
+          toast(
+            t("settings.postProcessing.actions.armedToast", {
+              shortcut,
+              name: event.payload.name,
+            }),
+            { id: "armed-action" },
+          );
+        },
+      );
+
+      const unlistenDeselected = await listen("action-deselected", () => {
+        toast(t("settings.postProcessing.actions.disarmedToast"), {
+          id: "armed-action",
+        });
+      });
+
+      cleanup = () => {
+        unlistenSelected();
+        unlistenDeselected();
+      };
+    };
+
+    setup();
+
+    return () => {
+      cleanup?.();
+    };
+  }, [osType, settings?.bindings, t]);
 
   const checkOnboardingStatus = async () => {
     try {

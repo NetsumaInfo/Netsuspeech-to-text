@@ -20,11 +20,13 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_autostart::ManagerExt;
 
 use crate::settings::{
-    self, get_settings, AutoSubmitKey, ClipboardHandling, KeyboardImplementation, LLMPrompt,
-    OverlayPosition, PasteMethod, ShortcutBinding, SoundTheme, TypingTool,
+    self, action_binding_id, default_action_binding, get_settings, AutoSubmitKey,
+    ClipboardHandling, KeyboardImplementation, LLMPrompt, OverlayPosition, PasteMethod,
+    ShortcutBinding, SoundTheme, TypingTool,
     APPLE_INTELLIGENCE_DEFAULT_MODEL_ID, APPLE_INTELLIGENCE_PROVIDER_ID,
 };
 use crate::tray;
+use crate::{actions::ActiveActionState, overlay};
 
 // Note: Commands are accessed via shortcut::handy_keys:: in lib.rs
 
@@ -52,6 +54,10 @@ pub fn init_shortcuts(app: &AppHandle) {
             }
         }
     }
+
+    // Keep action shortcuts available outside recording so users can arm
+    // an action before they start speaking.
+    register_action_shortcuts(app);
 }
 
 /// Register the cancel shortcut (called when recording starts)
@@ -72,21 +78,17 @@ pub fn unregister_cancel_shortcut(app: &AppHandle) {
     }
 }
 
-/// Register action shortcuts for configured actions (called when recording starts)
+/// Register action shortcuts for configured actions.
 pub fn register_action_shortcuts(app: &AppHandle) {
+    unregister_action_shortcuts(app);
+
     let settings = get_settings(app);
     for action in &settings.post_process_actions {
-        if action.key < 1 || action.key > 9 {
-            continue;
-        }
-        let shortcut_str = format!("ctrl+{}", action.key);
-        let binding = ShortcutBinding {
-            id: format!("action_{}", action.key),
-            name: action.name.clone(),
-            description: format!("Action {}", action.key),
-            default_binding: shortcut_str.clone(),
-            current_binding: shortcut_str,
-        };
+        let binding = settings
+            .bindings
+            .get(&action_binding_id(action.key))
+            .cloned()
+            .unwrap_or_else(|| default_action_binding(action.key, &action.name));
         match settings.keyboard_implementation {
             KeyboardImplementation::Tauri => {
                 tauri_impl::register_action_shortcut(app, binding);
@@ -98,18 +100,15 @@ pub fn register_action_shortcuts(app: &AppHandle) {
     }
 }
 
-/// Unregister all action shortcuts (called when recording stops)
+/// Unregister all action shortcuts.
 pub fn unregister_action_shortcuts(app: &AppHandle) {
     let settings = get_settings(app);
-    for key in 1..=9u8 {
-        let shortcut_str = format!("ctrl+{}", key);
-        let binding = ShortcutBinding {
-            id: format!("action_{}", key),
-            name: String::new(),
-            description: String::new(),
-            default_binding: shortcut_str.clone(),
-            current_binding: shortcut_str,
-        };
+    for action in &settings.post_process_actions {
+        let binding = settings
+            .bindings
+            .get(&action_binding_id(action.key))
+            .cloned()
+            .unwrap_or_else(|| default_action_binding(action.key, &action.name));
         match settings.keyboard_implementation {
             KeyboardImplementation::Tauri => {
                 tauri_impl::unregister_action_shortcut(app, binding);
@@ -206,15 +205,45 @@ pub fn change_binding(
         }
     }
 
-    // Unregister the existing binding
-    if let Err(e) = unregister_shortcut(&app, binding_to_modify.clone()) {
+    let mut active_implementation = settings.keyboard_implementation;
+
+    // If Tauri rejects the shortcut but HandyKeys accepts it, switch automatically.
+    if let Err(tauri_error) = validate_shortcut_for_implementation(&binding, active_implementation)
+    {
+        if active_implementation == KeyboardImplementation::Tauri
+            && validate_shortcut_for_implementation(&binding, KeyboardImplementation::HandyKeys)
+                .is_ok()
+        {
+            info!(
+                "Switching keyboard implementation to HandyKeys for shortcut '{}'",
+                binding
+            );
+            change_keyboard_implementation_setting(app.clone(), "handy_keys".to_string())?;
+            settings = settings::get_settings(&app);
+            active_implementation = settings.keyboard_implementation;
+        } else {
+            warn!("change_binding validation error: {}", tauri_error);
+            return Err(tauri_error);
+        }
+    }
+
+    // Unregister the existing binding after any implementation switch so we
+    // remove it from the backend that is actually active now.
+    let unregister_result = match active_implementation {
+        KeyboardImplementation::Tauri => {
+            tauri_impl::unregister_shortcut(&app, binding_to_modify.clone())
+        }
+        KeyboardImplementation::HandyKeys => {
+            handy_keys::unregister_shortcut(&app, binding_to_modify.clone())
+        }
+    };
+    if let Err(e) = unregister_result {
         let error_msg = format!("Failed to unregister shortcut: {}", e);
         error!("change_binding error: {}", error_msg);
     }
 
-    // Validate the new shortcut for the current keyboard implementation
-    if let Err(e) = validate_shortcut_for_implementation(&binding, settings.keyboard_implementation)
-    {
+    // Re-validate against the backend that is now active.
+    if let Err(e) = validate_shortcut_for_implementation(&binding, active_implementation) {
         warn!("change_binding validation error: {}", e);
         return Err(e);
     }
@@ -224,7 +253,15 @@ pub fn change_binding(
     updated_binding.current_binding = binding;
 
     // Register the new binding
-    if let Err(e) = register_shortcut(&app, updated_binding.clone()) {
+    let register_result = match active_implementation {
+        KeyboardImplementation::Tauri => {
+            tauri_impl::register_shortcut(&app, updated_binding.clone())
+        }
+        KeyboardImplementation::HandyKeys => {
+            handy_keys::register_shortcut(&app, updated_binding.clone())
+        }
+    };
+    if let Err(e) = register_result {
         let error_msg = format!("Failed to register shortcut: {}", e);
         error!("change_binding error: {}", error_msg);
         return Ok(BindingResponse {
@@ -332,6 +369,7 @@ pub fn change_keyboard_implementation_setting(
     // Initialize new implementation if needed (HandyKeys needs state)
     if new_impl == KeyboardImplementation::HandyKeys {
         if initialize_handy_keys_with_rollback(&app)? {
+            register_action_shortcuts(&app);
             // Shortcuts already registered during init
             return Ok(ImplementationChangeResult {
                 success: true,
@@ -342,6 +380,7 @@ pub fn change_keyboard_implementation_setting(
 
     // Register all shortcuts with new implementation, resetting invalid ones
     let reset_bindings = register_all_shortcuts_for_implementation(&app, new_impl);
+    register_action_shortcuts(&app);
 
     // Emit event to notify frontend of the change
     let _ = app.emit(
@@ -408,7 +447,7 @@ fn unregister_all_shortcuts(app: &AppHandle, implementation: KeyboardImplementat
 
     for (id, binding) in bindings {
         // Skip cancel shortcut as it's dynamically registered
-        if id == "cancel" {
+        if id == "cancel" || id.starts_with("action_") {
             continue;
         }
 
@@ -424,6 +463,8 @@ fn unregister_all_shortcuts(app: &AppHandle, implementation: KeyboardImplementat
             );
         }
     }
+
+    unregister_action_shortcuts(app);
 }
 
 /// Register all shortcuts for a specific implementation, validating and resetting invalid ones
@@ -1040,7 +1081,9 @@ pub fn add_post_process_action(
     };
 
     settings.post_process_actions.push(action.clone());
+    settings::ensure_action_bindings(&mut settings);
     settings::write_settings(&app, settings);
+    register_action_shortcuts(&app);
     Ok(action)
 }
 
@@ -1056,6 +1099,12 @@ pub fn update_post_process_action(
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
 
+    if !settings.post_process_actions.iter().any(|a| a.key == key) {
+        return Err(format!("Action with key {} not found", key));
+    }
+
+    unregister_action_shortcuts(&app);
+
     if let Some(action) = settings
         .post_process_actions
         .iter_mut()
@@ -1065,9 +1114,12 @@ pub fn update_post_process_action(
         action.prompt = prompt;
         action.model = model.filter(|m| !m.trim().is_empty());
         action.provider_id = provider_id.filter(|p| !p.trim().is_empty());
+        settings::ensure_action_bindings(&mut settings);
         settings::write_settings(&app, settings);
+        register_action_shortcuts(&app);
         Ok(())
     } else {
+        register_action_shortcuts(&app);
         Err(format!("Action with key {} not found", key))
     }
 }
@@ -1077,6 +1129,12 @@ pub fn update_post_process_action(
 pub fn delete_post_process_action(app: AppHandle, key: u8) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
 
+    if !settings.post_process_actions.iter().any(|a| a.key == key) {
+        return Err(format!("Action with key {} not found", key));
+    }
+
+    unregister_action_shortcuts(&app);
+
     let original_len = settings.post_process_actions.len();
     settings.post_process_actions.retain(|a| a.key != key);
 
@@ -1084,7 +1142,54 @@ pub fn delete_post_process_action(app: AppHandle, key: u8) -> Result<(), String>
         return Err(format!("Action with key {} not found", key));
     }
 
+    settings.bindings.remove(&action_binding_id(key));
+    settings::ensure_action_bindings(&mut settings);
     settings::write_settings(&app, settings);
+    register_action_shortcuts(&app);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_active_post_process_action(app: AppHandle) -> Option<u8> {
+    app.try_state::<ActiveActionState>()
+        .and_then(|state| state.0.lock().ok().and_then(|guard| *guard))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn set_active_post_process_action(app: AppHandle, key: Option<u8>) -> Result<(), String> {
+    let action_name = if let Some(key) = key {
+        let settings = settings::get_settings(&app);
+        let action = settings
+            .post_process_actions
+            .iter()
+            .find(|a| a.key == key)
+            .ok_or_else(|| format!("Action with key {} not found", key))?;
+        Some((key, action.name.clone()))
+    } else {
+        None
+    };
+
+    let state = app
+        .try_state::<ActiveActionState>()
+        .ok_or_else(|| "ActiveActionState not initialized".to_string())?;
+
+    match state.0.lock() {
+        Ok(mut guard) => {
+            *guard = key;
+        }
+        Err(poisoned) => {
+            *poisoned.into_inner() = key;
+        }
+    }
+
+    if let Some((key, name)) = action_name {
+        overlay::emit_action_selected(&app, key, &name);
+    } else {
+        overlay::emit_action_deselected(&app);
+    }
+
     Ok(())
 }
 

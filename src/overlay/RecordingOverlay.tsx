@@ -149,7 +149,6 @@ const RecordingOverlay: React.FC = () => {
         setIsVisible(true);
         if (overlayState === "recording") {
           setTimerStart(Date.now());
-          setSelectedAction(null);
         }
       });
 

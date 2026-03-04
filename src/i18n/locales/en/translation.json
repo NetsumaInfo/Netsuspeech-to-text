@@ -87,7 +87,7 @@
     },
     "permissions": {
       "title": "Permissions Required",
-      "description": "Parler needs a couple of permissions to work properly.",
+      "description": "Netsuspeech needs a couple of permissions to work properly.",
       "microphone": {
         "title": "Microphone Access",
         "description": "Required to hear your voice for transcription."
@@ -154,7 +154,7 @@
     "general": {
       "title": "General",
       "shortcut": {
-        "title": "Parler Shortcuts",
+        "title": "Netsuspeech Shortcuts",
         "description": "Configure keyboard shortcuts to trigger speech-to-text recording",
         "loading": "Loading shortcuts...",
         "none": "No shortcuts configured",
@@ -177,7 +177,8 @@
         "errors": {
           "restore": "Failed to restore original shortcut",
           "set": "Failed to set shortcut: {{error}}",
-          "reset": "Failed to reset shortcut to original value"
+          "reset": "Failed to reset shortcut to original value",
+          "mainKeyRequired": "Include a main key such as a letter, number, or space."
         }
       },
       "language": {
@@ -273,11 +274,11 @@
       },
       "autostart": {
         "label": "Launch on Startup",
-        "description": "Automatically start Parler when you log in to your computer."
+        "description": "Automatically start Netsuspeech when you log in to your computer."
       },
       "showTrayIcon": {
         "label": "Show Tray Icon",
-        "description": "Display the Parler icon in the system tray."
+        "description": "Display the Netsuspeech icon in the system tray."
       },
       "overlay": {
         "title": "Overlay Position",
@@ -416,11 +417,16 @@
       },
       "actions": {
         "title": "Actions",
-        "description": "Bind Ctrl+number keys (1-9) to custom prompts. Press a shortcut during recording to apply the action after transcription.",
+        "description": "Assign a custom global shortcut to each action. You can arm an action before recording, and it will stay active until you change or disable it.",
         "noActions": "No actions configured yet.",
         "createFirst": "Create your first action to process transcriptions with your configured provider.",
         "addAction": "Add Action",
         "editAction": "Edit Action",
+        "arm": "Arm",
+        "disarm": "Disarm",
+        "active": "Active",
+        "armedToast": "{{shortcut}} armed: {{name}}",
+        "disarmedToast": "Action disabled",
         "key": "Key",
         "keyLabel": "Key (1-9)",
         "name": "Name",
@@ -432,6 +438,7 @@
         "modelPlaceholder": "Select a model",
         "modelTip": "Select a specific model for this action, or use the default from the API section.",
         "defaultModel": "Default",
+        "shortcutAfterSave": "Save the action first, then click its shortcut to record the keys you want.",
         "save": "Save",
         "cancel": "Cancel",
         "delete": "Delete",
@@ -479,7 +486,7 @@
       },
       "updateChecks": {
         "label": "Check for Updates",
-        "description": "Automatically check for new versions of Parler"
+        "description": "Automatically check for new versions of Netsuspeech"
       },
       "soundTheme": {
         "label": "Sound Theme",
@@ -543,11 +550,11 @@
       "title": "About",
       "version": {
         "title": "Version",
-        "description": "Current version of Parler"
+        "description": "Current version of Netsuspeech"
       },
       "appDataDirectory": {
         "title": "App Data Directory",
-        "description": "Location where Parler stores its data"
+        "description": "Location where Netsuspeech stores its data"
       },
       "sourceCode": {
         "title": "Source Code",
@@ -556,7 +563,7 @@
       },
       "supportDevelopment": {
         "title": "Support Development",
-        "description": "Help us continue building Parler",
+        "description": "Help us continue building Netsuspeech",
         "button": "Donate"
       },
       "acknowledgments": {
@@ -564,7 +571,7 @@
         "whisper": {
           "title": "Whisper.cpp",
           "description": "High-performance inference of OpenAI's Whisper automatic speech recognition model",
-          "details": "Parler uses Whisper.cpp for fast, local speech-to-text processing. Thanks to the amazing work by Georgi Gerganov and contributors."
+          "details": "Netsuspeech uses Whisper.cpp for fast, local speech-to-text processing. Thanks to the amazing work by Georgi Gerganov and contributors."
         }
       }
     }
@@ -607,7 +614,7 @@
   },
   "accessibility": {
     "permissionsRequired": "Accessibility Permissions Required",
-    "permissionsDescription": "Parler needs accessibility permissions to type transcribed text.",
+    "permissionsDescription": "Netsuspeech needs accessibility permissions to type transcribed text.",
     "openSettings": "Open System Settings",
     "dismiss": "Dismiss"
   },
@@ -616,10 +623,11 @@
   },
   "appLanguage": {
     "title": "Application Language",
-    "description": "Change the language of the Parler interface"
+    "description": "Change the language of the Netsuspeech interface"
   },
   "overlay": {
     "transcribing": "Transcribing...",
     "processing": "Processing..."
   }
 }
+

@@ -131,27 +131,57 @@ impl TranscriptionCoordinator {
                             stage = Stage::Idle;
                         }
                         Command::SelectAction { key } => {
-                            if let Stage::Recording {
-                                ref mut selected_action,
-                                ..
-                            } = stage
+                            let next_action = if let Some(state) = app.try_state::<ActiveActionState>()
                             {
-                                if *selected_action == Some(key) {
-                                    *selected_action = None;
-                                    emit_action_deselected(&app);
-                                    debug!("Action {} deselected during recording", key);
+                                let mut guard = state.0.lock().unwrap();
+                                if *guard == Some(key) {
+                                    *guard = None;
+                                    None
                                 } else {
-                                    *selected_action = Some(key);
-                                    let settings = get_settings(&app);
-                                    if let Some(action) =
-                                        settings.post_process_actions.iter().find(|a| a.key == key)
-                                    {
-                                        emit_action_selected(&app, key, &action.name);
-                                    }
-                                    debug!("Action {} selected during recording", key);
+                                    *guard = Some(key);
+                                    Some(key)
                                 }
                             } else {
-                                debug!("Action selection ignored: not in recording state");
+                                debug!("ActiveActionState is not initialized");
+                                None
+                            };
+
+                            match &mut stage {
+                                Stage::Recording {
+                                    selected_action, ..
+                                } => {
+                                    *selected_action = next_action;
+                                    if let Some(key) = next_action {
+                                        let settings = get_settings(&app);
+                                        if let Some(action) = settings
+                                            .post_process_actions
+                                            .iter()
+                                            .find(|a| a.key == key)
+                                        {
+                                            emit_action_selected(&app, key, &action.name);
+                                        }
+                                        debug!("Action {} selected during recording", key);
+                                    } else {
+                                        emit_action_deselected(&app);
+                                        debug!("Action {} deselected during recording", key);
+                                    }
+                                }
+                                Stage::Idle | Stage::Processing => {
+                                    if let Some(key) = next_action {
+                                        let settings = get_settings(&app);
+                                        if let Some(action) = settings
+                                            .post_process_actions
+                                            .iter()
+                                            .find(|a| a.key == key)
+                                        {
+                                            emit_action_selected(&app, key, &action.name);
+                                        }
+                                        debug!("Action {} armed for the next transcription", key);
+                                    } else {
+                                        emit_action_deselected(&app);
+                                        debug!("Action {} disarmed", key);
+                                    }
+                                }
                             }
                         }
                     }
@@ -224,10 +254,21 @@ fn start(app: &AppHandle, stage: &mut Stage, binding_id: &str, hotkey_string: &s
         .try_state::<Arc<AudioRecordingManager>>()
         .map_or(false, |a| a.is_recording())
     {
+        let selected_action = app
+            .try_state::<ActiveActionState>()
+            .and_then(|state| state.0.lock().ok().and_then(|guard| *guard));
+
         *stage = Stage::Recording {
             binding_id: binding_id.to_string(),
-            selected_action: None,
+            selected_action,
         };
+
+        if let Some(key) = selected_action {
+            let settings = get_settings(app);
+            if let Some(action) = settings.post_process_actions.iter().find(|a| a.key == key) {
+                emit_action_selected(app, key, &action.name);
+            }
+        }
     } else {
         debug!("Start for '{binding_id}' did not begin recording; staying idle");
     }

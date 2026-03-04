@@ -2,7 +2,7 @@ use log::{debug, warn};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use specta::Type;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 
@@ -618,6 +618,69 @@ fn default_gemini_model() -> String {
     "gemini-2.5-flash".to_string()
 }
 
+pub fn action_binding_id(key: u8) -> String {
+    format!("action_{}", key)
+}
+
+pub fn default_action_binding(key: u8, action_name: &str) -> ShortcutBinding {
+    let shortcut = format!("ctrl+shift+{}", key);
+
+    ShortcutBinding {
+        id: action_binding_id(key),
+        name: format!("{} Shortcut", action_name),
+        description: format!("Shortcut used to arm action {}.", key),
+        default_binding: shortcut.clone(),
+        current_binding: shortcut,
+    }
+}
+
+pub fn ensure_action_bindings(settings: &mut AppSettings) -> bool {
+    let mut changed = false;
+    let active_action_ids: HashSet<String> = settings
+        .post_process_actions
+        .iter()
+        .map(|action| action_binding_id(action.key))
+        .collect();
+
+    let binding_count_before = settings.bindings.len();
+    settings
+        .bindings
+        .retain(|id, _| !id.starts_with("action_") || active_action_ids.contains(id));
+    changed |= settings.bindings.len() != binding_count_before;
+
+    for action in &settings.post_process_actions {
+        let default_binding = default_action_binding(action.key, &action.name);
+        match settings.bindings.get_mut(&default_binding.id) {
+            Some(binding) => {
+                if binding.name != default_binding.name {
+                    binding.name = default_binding.name.clone();
+                    changed = true;
+                }
+                if binding.description != default_binding.description {
+                    binding.description = default_binding.description.clone();
+                    changed = true;
+                }
+                if binding.default_binding != default_binding.default_binding {
+                    binding.default_binding = default_binding.default_binding.clone();
+                    changed = true;
+                }
+                if binding.current_binding.trim().is_empty() {
+                    binding.current_binding = default_binding.current_binding.clone();
+                    changed = true;
+                }
+            }
+            None => {
+                settings
+                    .bindings
+                    .insert(default_binding.id.clone(), default_binding);
+                changed = true;
+            }
+        }
+    }
+
+    changed
+}
+
 fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
     let mut changed = false;
     for provider in default_post_process_providers() {
@@ -848,7 +911,10 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
         default_settings
     };
 
-    if ensure_post_process_defaults(&mut settings) {
+    let mut updated = false;
+    updated |= ensure_post_process_defaults(&mut settings);
+    updated |= ensure_action_bindings(&mut settings);
+    if updated {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
 
@@ -872,7 +938,10 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         default_settings
     };
 
-    if ensure_post_process_defaults(&mut settings) {
+    let mut updated = false;
+    updated |= ensure_post_process_defaults(&mut settings);
+    updated |= ensure_action_bindings(&mut settings);
+    if updated {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
 

@@ -51,6 +51,7 @@ pub struct TranscriptionManager {
     model_manager: Arc<ModelManager>,
     app_handle: AppHandle,
     current_model_id: Arc<Mutex<Option<String>>>,
+    load_lock: Arc<Mutex<()>>,
     last_activity: Arc<AtomicU64>,
     shutdown_signal: Arc<AtomicBool>,
     watcher_handle: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
@@ -65,6 +66,7 @@ impl TranscriptionManager {
             model_manager,
             app_handle: app_handle.clone(),
             current_model_id: Arc::new(Mutex::new(None)),
+            load_lock: Arc::new(Mutex::new(())),
             last_activity: Arc::new(AtomicU64::new(
                 SystemTime::now()
                     .duration_since(SystemTime::UNIX_EPOCH)
@@ -209,6 +211,16 @@ impl TranscriptionManager {
     }
 
     pub fn load_model(&self, model_id: &str) -> Result<()> {
+        let _load_guard = self.load_lock.lock().unwrap();
+
+        if self.is_model_loaded() {
+            let current_model = self.current_model_id.lock().unwrap();
+            if current_model.as_deref() == Some(model_id) {
+                debug!("Model {} is already loaded, skipping duplicate load", model_id);
+                return Ok(());
+            }
+        }
+
         let load_start = std::time::Instant::now();
         debug!("Starting to load model: {}", model_id);
 

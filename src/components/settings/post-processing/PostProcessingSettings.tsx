@@ -1,7 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { commands } from "@/bindings";
+import { invoke } from "@tauri-apps/api/core";
 
+import { ShortcutInput } from "@/components/settings";
 import {
   Dropdown,
   SettingContainer,
@@ -11,10 +13,14 @@ import {
 import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { useSettings } from "../../../hooks/useSettings";
+import { useOsType } from "../../../hooks/useOsType";
+import { formatKeyCombination } from "../../../lib/utils/keyboard";
 
 const PostProcessingActionsComponent: React.FC = () => {
   const { t } = useTranslation();
   const { getSetting, refreshSettings } = useSettings();
+  const osType = useOsType();
+  const [activeActionKey, setActiveActionKey] = useState<number | null>(null);
   const [editingAction, setEditingAction] = useState<{
     key: number;
     name: string;
@@ -25,6 +31,7 @@ const PostProcessingActionsComponent: React.FC = () => {
 
   const actions = getSetting("post_process_actions") || [];
   const savedModels = getSetting("saved_processing_models") || [];
+  const bindings = getSetting("bindings") || {};
 
   const modelDropdownOptions = [
     {
@@ -41,6 +48,27 @@ const PostProcessingActionsComponent: React.FC = () => {
   const nextAvailableKey = Array.from({ length: 9 }, (_, i) => i + 1).find(
     (k) => !usedKeys.has(k),
   );
+  const actionShortcutId = (key: number) => `action_${key}`;
+  const formatActionShortcut = (key: number) => {
+    const binding = bindings[actionShortcutId(key)]?.current_binding;
+    if (!binding) {
+      return `Ctrl+Shift+${key}`;
+    }
+    return formatKeyCombination(binding, osType);
+  };
+
+  useEffect(() => {
+    const loadActiveAction = async () => {
+      try {
+        const active = await invoke<number | null>("get_active_post_process_action");
+        setActiveActionKey(active ?? null);
+      } catch (error) {
+        console.error("Failed to load active action:", error);
+      }
+    };
+
+    loadActiveAction();
+  }, [actions.length]);
 
   const handleStartCreate = () => {
     if (!nextAvailableKey) return;
@@ -110,6 +138,10 @@ const PostProcessingActionsComponent: React.FC = () => {
 
   const handleDelete = async (key: number) => {
     try {
+      if (activeActionKey === key) {
+        await invoke("set_active_post_process_action", { key: null });
+        setActiveActionKey(null);
+      }
       await commands.deletePostProcessAction(key);
       await refreshSettings();
       if (editingAction?.key === key) {
@@ -117,6 +149,16 @@ const PostProcessingActionsComponent: React.FC = () => {
       }
     } catch (error) {
       console.error("Failed to delete action:", error);
+    }
+  };
+
+  const handleToggleActive = async (key: number) => {
+    try {
+      const nextKey = activeActionKey === key ? null : key;
+      await invoke("set_active_post_process_action", { key: nextKey });
+      setActiveActionKey(nextKey);
+    } catch (error) {
+      console.error("Failed to toggle active action:", error);
     }
   };
 
@@ -136,7 +178,11 @@ const PostProcessingActionsComponent: React.FC = () => {
               .map((action) => (
                 <div
                   key={action.key}
-                  className="flex items-center gap-3 p-2 rounded-md hover:bg-mid-gray/5 cursor-pointer group"
+                  className={`flex items-center gap-3 p-2 rounded-md cursor-pointer group ${
+                    activeActionKey === action.key
+                      ? "bg-blue-500/10 border border-blue-500/20"
+                      : "hover:bg-mid-gray/5"
+                  }`}
                   onClick={() => handleStartEdit(action)}
                 >
                   <span className="flex items-center justify-center w-6 h-6 rounded bg-blue-500/15 text-blue-400 text-xs font-bold font-mono flex-shrink-0">
@@ -144,6 +190,14 @@ const PostProcessingActionsComponent: React.FC = () => {
                   </span>
                   <span className="text-sm text-text flex-1 truncate">
                     {action.name}
+                    <span className="text-xs text-mid-gray/60 ml-2">
+                      {formatActionShortcut(action.key)}
+                    </span>
+                    {activeActionKey === action.key && (
+                      <span className="text-xs text-blue-400 ml-2">
+                        {t("settings.postProcessing.actions.active")}
+                      </span>
+                    )}
                     {action.provider_id && action.model && (
                       <span className="text-xs text-mid-gray/60 ml-2">
                         {savedModels.find(
@@ -152,6 +206,21 @@ const PostProcessingActionsComponent: React.FC = () => {
                       </span>
                     )}
                   </span>
+                  <button
+                    className={`text-xs px-2 py-1 rounded transition-colors ${
+                      activeActionKey === action.key
+                        ? "bg-blue-500/20 text-blue-300 hover:bg-blue-500/25"
+                        : "bg-mid-gray/10 text-mid-gray/80 hover:text-text hover:bg-mid-gray/20"
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleActive(action.key);
+                    }}
+                  >
+                    {activeActionKey === action.key
+                      ? t("settings.postProcessing.actions.disarm")
+                      : t("settings.postProcessing.actions.arm")}
+                  </button>
                   <button
                     className="text-xs text-mid-gray/60 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity px-1"
                     onClick={(e) => {
@@ -175,14 +244,19 @@ const PostProcessingActionsComponent: React.FC = () => {
         )}
 
         {editingAction && (
-          <div className="space-y-3 p-3 rounded-md border border-mid-gray/20 bg-mid-gray/5">
-            <div className="flex gap-3">
-              <div className="space-y-1 flex flex-col">
+            <div className="space-y-3 p-3 rounded-md border border-mid-gray/20 bg-mid-gray/5">
+              <div className="flex gap-3">
+                <div className="space-y-1 flex flex-col">
                 <label className="text-sm font-semibold">
                   {t("settings.postProcessing.actions.key")}
                 </label>
-                <div className="flex items-center justify-center w-8 h-8 rounded bg-blue-500/15 text-blue-400 text-sm font-bold font-mono">
-                  {editingAction.key}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-8 h-8 rounded bg-blue-500/15 text-blue-400 text-sm font-bold font-mono">
+                    {editingAction.key}
+                  </div>
+                  <span className="text-xs text-mid-gray/70 font-mono">
+                    {formatActionShortcut(editingAction.key)}
+                  </span>
                 </div>
               </div>
               <div className="space-y-1 flex flex-col flex-1">
@@ -202,6 +276,21 @@ const PostProcessingActionsComponent: React.FC = () => {
                 />
               </div>
             </div>
+
+            {!editingAction.isNew && (
+              <div className="space-y-1">
+                <ShortcutInput
+                  shortcutId={actionShortcutId(editingAction.key)}
+                  descriptionMode="tooltip"
+                />
+              </div>
+            )}
+
+            {editingAction.isNew && (
+              <p className="text-xs text-mid-gray/70">
+                {t("settings.postProcessing.actions.shortcutAfterSave")}
+              </p>
+            )}
 
             <div className="space-y-1 flex flex-col">
               <label className="text-sm font-semibold">

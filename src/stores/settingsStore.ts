@@ -301,7 +301,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
     // Update a specific binding
     updateBinding: async (id, binding) => {
-      const { settings, setUpdating } = get();
+      const { settings, setUpdating, refreshSettings } = get();
       const updateKey = `binding_${id}`;
       const originalBinding = settings?.bindings?.[id]?.current_binding;
 
@@ -335,6 +335,8 @@ export const useSettingsStore = create<SettingsStore>()(
         if (!result.data.success) {
           throw new Error(result.data.error || "Failed to update binding");
         }
+
+        await refreshSettings();
       } catch (error) {
         console.error(`Failed to update binding ${id}:`, error);
 

@@ -272,6 +272,17 @@ async deletePostProcessAction(key: number) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async getActivePostProcessAction() : Promise<number | null> {
+    return await TAURI_INVOKE("get_active_post_process_action");
+},
+async setActivePostProcessAction(key: number | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_active_post_process_action", { key }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async addSavedProcessingModel(providerId: string, modelId: string, label: string) : Promise<Result<SavedProcessingModel, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("add_saved_processing_model", { providerId, modelId, label }) };
