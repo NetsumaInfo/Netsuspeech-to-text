@@ -73,7 +73,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERBQTU3OTUyOTRCQ0VFRTAKUldUZzdyeVVVbm1sMm44Vm0wWG5CL0FTMmdsNEx5Y1hwQVFmV1RNMzVMT3VHSnhITWhoYkcwYjkK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQxMTg0OEI1Qzg4NjdEMjgKUldRb2ZZYkl0VWdZUVV1dU1YS1B4QWNFQXVCU28yUnY4V0ZEWGEzbnRNemFTOVNqUFV5ZkVSc1oK",
       "endpoints": [
         "https://github.com/NetsumaInfo/Netsuspeech-to-text/releases/latest/download/latest.json"
       ]
