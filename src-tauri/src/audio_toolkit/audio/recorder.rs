@@ -76,8 +76,13 @@ impl AudioRecorder {
         let level_cb = self.level_cb.clone();
 
         let worker = std::thread::spawn(move || {
-            let config = AudioRecorder::get_preferred_config(&thread_device)
-                .expect("failed to fetch preferred config");
+            let config = match AudioRecorder::get_preferred_config(&thread_device) {
+                Ok(config) => config,
+                Err(e) => {
+                    log::error!("Failed to fetch preferred input config: {}", e);
+                    return;
+                }
+            };
 
             let sample_rate = config.sample_rate().0;
             let channels = config.channels() as usize;
@@ -90,31 +95,42 @@ impl AudioRecorder {
                 config.sample_format()
             );
 
-            let stream = match config.sample_format() {
+            let stream_result = match config.sample_format() {
                 cpal::SampleFormat::U8 => {
                     AudioRecorder::build_stream::<u8>(&thread_device, &config, sample_tx, channels)
-                        .unwrap()
+                        .map_err(|e| e.to_string())
                 }
                 cpal::SampleFormat::I8 => {
                     AudioRecorder::build_stream::<i8>(&thread_device, &config, sample_tx, channels)
-                        .unwrap()
+                        .map_err(|e| e.to_string())
                 }
                 cpal::SampleFormat::I16 => {
                     AudioRecorder::build_stream::<i16>(&thread_device, &config, sample_tx, channels)
-                        .unwrap()
+                        .map_err(|e| e.to_string())
                 }
                 cpal::SampleFormat::I32 => {
                     AudioRecorder::build_stream::<i32>(&thread_device, &config, sample_tx, channels)
-                        .unwrap()
+                        .map_err(|e| e.to_string())
                 }
                 cpal::SampleFormat::F32 => {
                     AudioRecorder::build_stream::<f32>(&thread_device, &config, sample_tx, channels)
-                        .unwrap()
+                        .map_err(|e| e.to_string())
                 }
-                _ => panic!("unsupported sample format"),
+                other => Err(format!("Unsupported input sample format: {:?}", other)),
             };
 
-            stream.play().expect("failed to start stream");
+            let stream = match stream_result {
+                Ok(stream) => stream,
+                Err(e) => {
+                    log::error!("Failed to build audio input stream: {}", e);
+                    return;
+                }
+            };
+
+            if let Err(e) = stream.play() {
+                log::error!("Failed to start audio input stream: {}", e);
+                return;
+            }
 
             // keep the stream alive while we process samples
             run_consumer(sample_rate, vad, sample_rx, cmd_rx, level_cb);
@@ -313,7 +329,11 @@ fn run_consumer(
                     recording = true;
                     visualizer.reset(); // Reset visualization buffer
                     if let Some(v) = &vad {
-                        v.lock().unwrap().reset();
+                        if let Ok(mut detector) = v.lock() {
+                            detector.reset();
+                        } else {
+                            log::warn!("Failed to lock VAD state (poisoned), continuing without reset");
+                        }
                     }
                 }
                 Cmd::Stop(reply_tx) => {

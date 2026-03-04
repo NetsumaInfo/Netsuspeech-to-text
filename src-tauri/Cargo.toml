@@ -1,6 +1,6 @@
 [package]
 name = "netsuspeech"
-version = "0.7.16"
+version = "0.7.17"
 description = "Netsuspeech"
 authors = ["cjpais"]
 edition = "2021"
@@ -115,4 +115,3 @@ tempfile = "3"
 lto = true
 codegen-units = 1
 strip = true
-panic = "abort"
