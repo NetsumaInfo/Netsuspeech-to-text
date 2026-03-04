@@ -23,7 +23,7 @@ use transcribe_rs::{
             Language as SenseVoiceLanguage, SenseVoiceEngine, SenseVoiceInferenceParams,
             SenseVoiceModelParams,
         },
-        whisper::{WhisperEngine, WhisperInferenceParams},
+        whisper::{WhisperEngine, WhisperInferenceParams, WhisperModelParams},
     },
     TranscriptionEngine,
 };
@@ -264,7 +264,17 @@ impl TranscriptionManager {
         let loaded_engine = match model_info.engine_type {
             EngineType::Whisper => {
                 let mut engine = WhisperEngine::new();
-                engine.load_model(&model_path).map_err(|e| {
+                let use_whisper_gpu = std::env::var("NETSUSPEECH_WHISPER_GPU")
+                    .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+                    .unwrap_or(!cfg!(target_os = "windows"));
+
+                if cfg!(target_os = "windows") && !use_whisper_gpu {
+                    info!("Whisper GPU disabled on Windows for stability");
+                }
+
+                engine
+                    .load_model_with_params(&model_path, WhisperModelParams { use_gpu: use_whisper_gpu })
+                    .map_err(|e| {
                     let error_msg = format!("Failed to load whisper model {}: {}", model_id, e);
                     let _ = self.app_handle.emit(
                         "model-state-changed",
