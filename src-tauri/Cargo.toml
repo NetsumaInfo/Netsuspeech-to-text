@@ -1,6 +1,6 @@
 [package]
 name = "netsuspeech"
-version = "0.7.17"
+version = "0.7.18"
 description = "Netsuspeech"
 authors = ["cjpais"]
 edition = "2021"
